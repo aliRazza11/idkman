@@ -1,75 +1,103 @@
+from __future__ import annotations
 import numpy as np
 import logging
+from dataclasses import dataclass
+from typing import Literal
 
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ScheduleType = Literal["linear", "cosine"]
+
+
+@dataclass(frozen=True)
+class BetaScheduleResult:
+    beta: np.ndarray                # (T,) float32
+    alpha: np.ndarray               # (T,) float32
+    alpha_bar: np.ndarray           # (T,) float32
+    sqrt_alpha_bar: np.ndarray      # (T,) float32
+    sqrt_one_minus_alpha_bar: np.ndarray  # (T,) float32
+    sqrt_one_minus_beta: np.ndarray       # (T,) float32
+
+
 class BetaScheduler:
-    def __init__(self, steps: int, schedule: str):
-        """
-        Initializes the BetaScheduler object.
+    """
+    Produces DDPM-style noise schedules with all commonly-used
+    derived arrays precomputed for speed & stability.
+    """
 
-        Args:
-            steps (int): Number of diffusion steps (maximum=1000).
-            schedule (str): Beta schedule type ('linear' or 'cosine').
+    def __init__(
+        self,
+        steps: int,
+        schedule: ScheduleType = "linear",
+        beta_start: float = 1e-4,
+        beta_end: float = 2e-2,
+        cosine_s: float = 8e-3,  # per Nichol & Dhariwal (cosine schedule)
+    ):
+        if not (1 <= steps <= 1000):
+            raise ValueError("steps must be in [1, 1000]")
+        if schedule not in ("linear", "cosine"):
+            raise ValueError("Unsupported schedule. Use 'linear' or 'cosine'.")
 
-        Raises:
-            ValueError: If image decoding fails or beta_schedule is invalid.
-        """
-        if steps > 1000:
-            raise ValueError("Maximum allowed steps are 1000")
-        self.steps = steps
+        self.steps = int(steps)
         self.schedule = schedule
-        
-    def _compute_beta(self, steps: int, schedule: str = "linear", max:int = 0.02, min:int=0.001) -> np.ndarray:
-        """
-        Computes betas for the given number of steps and schedule.
+        self.beta_start = float(beta_start)
+        self.beta_end = float(beta_end)
+        self.cosine_s = float(cosine_s)
 
-        Args:
-            steps (int): Number of steps.
-            schedule (str): Beta schedule type ('linear' or 'cosine').
+        self._res = self._build()
 
-        Returns:
-            np.ndarray: beta value over the given number of steps
+    # ---------- Public API ----------
+    def get_beta(self) -> np.ndarray:
+        return self._res.beta
 
-        Raises:
-            ValueError: If unsupported schedule is provided,
-            or if number of steps is greater than 1000.
-        """
-        if schedule == "linear":
-            beta = np.linspace(min, max, 1000)[:steps]
-        elif schedule == "cosine":
-            t = np.linspace(min, np.pi / 2, 1000)[:steps]
-            beta = np.sin(t) ** 2 * max
+    def get_alpha(self) -> np.ndarray:
+        return self._res.alpha
+
+    def get_alpha_bar(self) -> np.ndarray:
+        return self._res.alpha_bar
+
+    def get_all(self) -> BetaScheduleResult:
+        return self._res
+
+    # ---------- Internals ----------
+    def _build(self) -> BetaScheduleResult:
+        if self.schedule == "linear":
+            beta = np.linspace(self.beta_start, self.beta_end, self.steps, dtype=np.float32)
+            beta = np.clip(beta, 1e-8, 0.999)  # numerical safety
+            alpha = (1.0 - beta).astype(np.float32)
+            alpha_bar = np.cumprod(alpha, dtype=np.float32)
         else:
-            logger.error(f"Unsupported beta schedule: {schedule}")
-            raise ValueError("Unsupported beta schedule. Use 'linear' or 'cosine'.")
-        
-        return beta
-    
-    def _compute_alphas_bar(self, steps: int, schedule: str = "linear") -> float:
-        """
-        Computes cumulative product of alphas (alphas_bar) for the given schedule.
+            # Cosine schedule (alpha_bar defined directly), then convert to beta
+            # alpha_bar(t) = (cos(((t/T + s)/(1+s)) * pi/2) / cos(s/(1+s)*pi/2))^2
+            T = self.steps
+            s = self.cosine_s
+            ts = np.arange(T, dtype=np.float32)
+            f = lambda u: np.cos(((u + s) / (1.0 + s)) * (np.pi / 2.0)) ** 2
+            denom = f(0.0)
+            alpha_bar = (f(ts / T) / denom).astype(np.float32)
+            alpha_bar = np.clip(alpha_bar, 1e-8, 1.0)  # keep in (0,1]
+            # Convert to beta via: beta_t = 1 - alpha_bar_t / alpha_bar_{t-1}
+            beta = np.empty(T, dtype=np.float32)
+            beta[0] = 1.0 - alpha_bar[0]
+            prev = alpha_bar[0]
+            for t in range(1, T):
+                beta[t] = 1.0 - (alpha_bar[t] / prev)
+                prev = alpha_bar[t]
+            beta = np.clip(beta, 1e-8, 0.999)
+            alpha = (1.0 - beta).astype(np.float32)
+            # Recompute alpha_bar from alpha to stay perfectly consistent
+            alpha_bar = np.cumprod(alpha, dtype=np.float32)
 
-        Args:
-            steps (int): Number of steps.
-            schedule (str): Beta schedule type ('linear' or 'cosine').
+        sqrt_alpha_bar = np.sqrt(alpha_bar, dtype=np.float32)
+        sqrt_one_minus_alpha_bar = np.sqrt(1.0 - alpha_bar, dtype=np.float32)
+        sqrt_one_minus_beta = np.sqrt(1.0 - beta, dtype=np.float32)
 
-        Returns:
-            Tuple[np.ndarray, float]: Values of alpha_bar and the product of alphas over the steps
-
-        Raises:
-            ValueError: If an unsupported schedule is provided.
-        """
-        beta = self._compute_beta(steps, schedule)
-        alphas = 1 - beta
-        alphas_bar = np.cumprod(alphas)
-        logger.debug(f"Computed alphas_bar: {alphas_bar[-1]:.4f}")
-        return alphas_bar, alphas_bar[-1]
-    
-    def get_beta(self):
-        return self._compute_beta(self.steps, self.schedule)
-    
-    def get_alpha_bar(self):
-        return self._compute_alphas_bar(self.steps, self.schedule)[1]
+        logger.info("Built %s schedule with %d steps.", self.schedule, self.steps)
+        return BetaScheduleResult(
+            beta=beta,
+            alpha=alpha,
+            alpha_bar=alpha_bar,
+            sqrt_alpha_bar=sqrt_alpha_bar,
+            sqrt_one_minus_alpha_bar=sqrt_one_minus_alpha_bar,
+            sqrt_one_minus_beta=sqrt_one_minus_beta,
+        )

@@ -1,88 +1,114 @@
-import numpy as np
-import logging
+from __future__ import annotations
 import base64
-from PIL import Image
+import logging
+from dataclasses import dataclass
 from io import BytesIO
+from typing import Optional, Tuple
 
-logging.basicConfig(level=logging.INFO)
+import numpy as np
+from PIL import Image
+
 logger = logging.getLogger(__name__)
 
+
+def _strip_data_url_prefix(b64: str) -> str:
+    # Accept both raw base64 and data URLs: data:image/png;base64,XXXX
+    if "," in b64 and b64.strip().lower().startswith("data:"):
+        return b64.split(",", 1)[1]
+    return b64
+
+
+@dataclass
 class ImageProcessor:
     """
-    A class to process images encoded as base64 strings.
-
-    This class provides functionality to decode a base64-encoded image
-    string into a NumPy array and retrieve image properties such as size and shape.
-
-    Attributes:
-        encoded_img (str): The base64-encoded image string.
-        _decoded_image (np.ndarray or None): Cached decoded image array, initially None.
-
-    Example:
-        >>> processor = ImageProcessor(encoded_image_string)
-        >>> image_array = processor.decode_image()
-        >>> height, width = processor.get_size()
+    Small utility for decoding/encoding base64 images and basic validation.
     """
-    def __init__(self, encoded_img: str):
-        """
-        Initializes the ImageProcessor with a base64-encoded image string.
+    encoded_img: str
+    _decoded_image: Optional[np.ndarray] = None  # HxWxC uint8
 
-        Args:
-            encoded_img (str): The base64-encoded representation of an image.
-        """
-        self.encoded_img = encoded_img
-        self._decoded_image = None
-
+    # ---------- Decode ----------
     def _decode_image(self, encoded_img: str) -> np.ndarray:
-        """
-        Decodes a base64 image string into a NumPy RGB array.
-
-        Args:
-            encoded_img (str): Base64-encoded image.
-
-        Returns:
-            np.ndarray: Decoded image as an array.
-
-        Raises:
-            ValueError: If decoding or image opening fails.
-        """
         try:
-            decoded = base64.b64decode(encoded_img)
-            image = Image.open(BytesIO(decoded)).convert("RGB")
-            logger.debug("Image decoded successfully.")
-            return np.array(image)
+            raw = base64.b64decode(_strip_data_url_prefix(encoded_img), validate=True)
+            with Image.open(BytesIO(raw)) as im:
+                # Normalize to RGB to keep the rest of the pipeline simple.
+                im = im.convert("RGB")
+                arr = np.asarray(im, dtype=np.uint8)
+            logger.debug("Image decoded: shape=%s, dtype=%s", arr.shape, arr.dtype)
+            return arr
         except Exception as e:
-            logger.error(f"Image decoding failed: {e}")
-            raise ValueError(f"Invalid image data: {str(e)}")
-        
+            logger.error("Image decoding failed: %s", e)
+            raise ValueError(f"Invalid image data: {e}")
 
-    def decode_image(self) -> np.ndarray:
+    def decode_image(
+        self,
+        *,
+        max_side: Optional[int] = None,
+    ) -> np.ndarray:
         """
-        Decodes the base64 image string and returns the image and its shape.
-
-        Returns:
-            np.ndarray: Decoded image array
-        """    
-        self._decoded_image = self._decode_image(self.encoded_img)
-        return self._decoded_image
-    
-    def get_shape(self) -> tuple:
+        Decode to HxWx3 uint8; optionally downscale preserving aspect ratio.
         """
-        Returns the shape of the decoded image as a tuple.
+        img = self._decode_image(self.encoded_img)
+        if max_side is not None and max_side > 0:
+            h, w = img.shape[:2]
+            m = max(h, w)
+            if m > max_side:
+                scale = max_side / float(m)
+                new_size = (max(int(w * scale), 1), max(int(h * scale), 1))
+                with Image.fromarray(img) as im:
+                    im = im.resize(new_size, resample=Image.LANCZOS)
+                    img = np.asarray(im, dtype=np.uint8)
+                logger.debug("Image resized to: %s", img.shape)
+        self._decoded_image = img
+        return img
 
-        The shape tuple typically has the format (height, width, channels).
+    # ---------- Introspection ----------
+    def get_shape(self) -> Tuple[int, int, int]:
+        if self._decoded_image is None:
+            raise RuntimeError("Image not decoded yet. Call decode_image() first.")
+        return self._decoded_image.shape
 
-        Raises:
-            RuntimeError: If the image has not been decoded yet (i.e., 
-                        `decode_image()` has not been called).
-            ValueError: If there is any issue accessing the image shape.
-
-        Returns:
-            tuple: The shape of the decoded image array.
+    # ---------- Encode helpers (useful for API responses) ----------
+    @staticmethod
+    def array_to_base64(
+        arr: np.ndarray,
+        format: str = "JPEG",
+        quality: int = 90,
+    ) -> str:
         """
-        try:
-            if self._decoded_image is None:
-                raise RuntimeError("Image not decoded yet. Please call decode_image() first")
-            return self._decoded_image.shape
-        except Exception as e:
-            raise ValueError(f"Invalid image data: {str(e)}")
+        Encode an HxWx{1,3} uint8 numpy array to raw base64 (no data URL prefix).
+        """
+        if arr.ndim == 2:
+            mode = "L"
+            pil = Image.fromarray(arr, mode=mode)
+        elif arr.ndim == 3 and arr.shape[2] in (1, 3):
+            if arr.shape[2] == 1:
+                pil = Image.fromarray(arr.squeeze(-1), mode="L")
+                format = "PNG"  # safer for single-channel if caller didn't specify
+            else:
+                pil = Image.fromarray(arr, mode="RGB")
+        else:
+            raise ValueError("Expected HxW or HxWx{1,3} uint8 array.")
+
+        buff = BytesIO()
+        save_kwargs = {}
+        if format.upper() == "JPEG":
+            save_kwargs["quality"] = int(quality)
+            save_kwargs["optimize"] = True
+        pil.save(buff, format=format)
+        return base64.b64encode(buff.getvalue()).decode("utf-8")
+
+    @staticmethod
+    def array_to_data_url(
+        arr: np.ndarray,
+        format: str = "JPEG",
+        quality: int = 90,
+    ) -> str:
+        mime = {
+            "JPEG": "image/jpeg",
+            "JPG": "image/jpeg",
+            "PNG": "image/png",
+            "WEBP": "image/webp",
+        }.get(format.upper(), "application/octet-stream")
+        b64 = ImageProcessor.array_to_base64(arr, format=format, quality=quality)
+        return f"data:{mime};base64,{b64}"

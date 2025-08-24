@@ -34,7 +34,6 @@ def set_auth_cookies(resp: Response, access: str, refresh: str) -> str:
     resp.set_cookie("access_token", access, **cookie_params)
     resp.set_cookie("refresh_token", refresh, **cookie_params)
 
-    # CSRF double-submit token
     csrf = secrets.token_urlsafe(24)
     resp.set_cookie(
         "csrf_token", csrf,

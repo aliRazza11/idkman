@@ -7,17 +7,25 @@ import {
   Trash2,
   Download,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function Dashboard() {
   const [diffusionValue, setDiffusionValue] = useState(500);
   const [betaMin, setBetaMin] = useState("");
   const [betaMax, setBetaMax] = useState("");
   const [collapsed, setCollapsed] = useState(false);
-  const [uploadedImage, setUploadedImage] = useState(null);
+  const [uploadedImage, setUploadedImage] = useState(null); // preview URL
+  const [uploadedImageDataUrl, setUploadedImageDataUrl] = useState(null); // base64 dataURL for backend
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState(null);
   const [viewerImage, setViewerImage] = useState(null);
   const [history, setHistory] = useState([]);
+  const navigate = useNavigate();
+
+
+  // New states for diffusion
+  const [diffusedImage, setDiffusedImage] = useState(null);
+  const [schedule, setSchedule] = useState("linear"); // could add a dropdown later
 
   const toUiImage = (item) => ({
     id: item.id,
@@ -41,16 +49,26 @@ export default function Dashboard() {
     })();
   }, []);
 
-  const sendToBackend = async (value) => {
-    console.log("Diffusion value sent:", value, betaMin, betaMax);
-  };
+  // helper: convert File → base64 data URL
+  const fileToDataURL = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
 
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
+      // local preview
       setUploadedImage(URL.createObjectURL(file));
+      // also keep base64 for backend
+      const dataUrl = await fileToDataURL(file);
+      setUploadedImageDataUrl(dataUrl);
 
+      // upload to history (optional, you already had this)
       const formData = new FormData();
       formData.append("file", file);
 
@@ -63,7 +81,6 @@ export default function Dashboard() {
       const item = await res.json();
       const uiItem = toUiImage(item);
       setHistory((prev) => [uiItem, ...prev]);
-      // (No auto popup)
     } catch (err) {
       console.error(err);
     }
@@ -96,9 +113,50 @@ export default function Dashboard() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Logout failed");
-      window.location.href = "/login";
+      navigate("/login", { replace: true });
+      window.location.reload();
     } catch (err) {
       console.error("Error logging out:", err);
+    }
+  };
+
+  // ✅ Diffusion endpoint call
+  const sendToBackend = async () => {
+    if (!uploadedImageDataUrl) {
+      alert("Please upload an image first.");
+      return;
+    }
+
+    // sanitize & defaults
+    const steps = Math.max(1, Math.min(1000, Number(diffusionValue) || 1));
+    const beta_start = betaMin ? Number(betaMin) : undefined;
+    const beta_end = betaMax ? Number(betaMax) : undefined;
+
+    try {
+      const res = await fetch("http://localhost:8000/diffuse", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_b64: uploadedImageDataUrl, // data URL string
+          steps,
+          schedule,
+          beta_start,
+          beta_end,
+          seed: 42, // deterministic
+          return_data_url: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error('error is here' || "Diffusion failed");
+      }
+      const data = await res.json();
+      setDiffusedImage(data.image);
+    } catch (e) {
+      console.error(e);
+      alert(e.message);
     }
   };
 
@@ -157,10 +215,14 @@ export default function Dashboard() {
 
         {/* Bottom actions */}
         <div className="p-2 border-t border-zinc-700/50 flex flex-col gap-1 mt-auto">
-          <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/10 text-sm text-zinc-200">
-            <Settings size={18} />
-            {!collapsed && <span>Settings</span>}
-          </button>
+          <button
+          onClick={() => navigate("/settings")}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/10 text-sm text-zinc-200"
+        >
+          <Settings size={18} />
+          {!collapsed && <span>Settings</span>}
+        </button>
+
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/10 text-sm text-zinc-200"
@@ -207,7 +269,6 @@ export default function Dashboard() {
                   <h2 className="text-xl md:text-2xl font-bold text-center text-gray-900 py-3 border-b border-gray-200">
                     Original Image
                   </h2>
-                  {/* Equal-height image area */}
                   <div className="flex-1 flex items-center justify-center p-2 overflow-hidden">
                     <img
                       src={uploadedImage}
@@ -222,10 +283,9 @@ export default function Dashboard() {
                   <h2 className="text-xl md:text-2xl font-bold text-center text-gray-900 py-3 border-b border-gray-200">
                     Diffused Image
                   </h2>
-                  {/* Equal-height image area */}
                   <div className="flex-1 flex items-center justify-center p-2 overflow-hidden">
                     <img
-                      src={uploadedImage}
+                      src={diffusedImage || uploadedImage}
                       alt="Diffused"
                       className="max-h-full max-w-full object-contain"
                     />
@@ -233,70 +293,66 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              
-              {/* ✅ bottom controls: Upload + Slider + Beta min/max + Diffuse */}
-<div className="bg-white rounded-t-2xl shadow-md border-t border-gray-200 p-6">
-  <div className="w-full flex flex-wrap items-center justify-center gap-6">
-    {/* Upload button */}
-    <label className="bg-gray-900 text-white px-6 py-2 rounded-lg cursor-pointer hover:bg-gray-800 transition font-medium flex items-center">
-      Upload Another Image
-      <input
-        type="file"
-        accept="image/*"
-        onChange={handleUpload}
-        className="hidden"
-      />
-    </label>
+              {/* Controls */}
+              <div className="bg-white rounded-t-2xl shadow-md border-t border-gray-200 p-6">
+                <div className="w-full flex flex-wrap items-center justify-center gap-6">
+                  {/* Upload another */}
+                  <label className="bg-gray-900 text-white px-6 py-2 rounded-lg cursor-pointer hover:bg-gray-800 transition font-medium flex items-center">
+                    Upload Another Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUpload}
+                      className="hidden"
+                    />
+                  </label>
 
-    {/* Slider */}
-    <div className="flex flex-col items-center w-64">
-      <label className="text-sm font-medium text-gray-700 mb-1">
-        Steps: {diffusionValue}
-      </label>
-      <input
-        type="range"
-        min="0"
-        max="1000"
-        value={diffusionValue}
-        onChange={(e) => setDiffusionValue(e.target.value)}
-        className="w-full accent-black"
-      />
-    </div>
+                  {/* Slider */}
+                  <div className="flex flex-col items-center w-64">
+                    <label className="text-sm font-medium text-gray-700 mb-1">
+                      Steps: {diffusionValue}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1000"
+                      value={diffusionValue}
+                      onChange={(e) => setDiffusionValue(e.target.value)}
+                      className="w-full accent-black"
+                    />
+                  </div>
 
-    {/* Beta Min */}
-    <div className="flex items-center gap-2">
-      <label className="text-sm font-medium text-gray-700">Beta Min</label>
-      <input
-        type="number"
-        value={betaMin}
-        onChange={(e) => setBetaMin(e.target.value)}
-        className="border border-gray-300 rounded px-2 py-1 w-20 text-center"
-      />
-    </div>
+                  {/* Beta Min */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium text-gray-700">Beta Min</label>
+                    <input
+                      type="number"
+                      value={betaMin}
+                      onChange={(e) => setBetaMin(e.target.value)}
+                      className="border border-gray-300 rounded px-2 py-1 w-20 text-center"
+                    />
+                  </div>
 
-    {/* Beta Max */}
-    <div className="flex items-center gap-2">
-      <label className="text-sm font-medium text-gray-700">Beta Max</label>
-      <input
-        type="number"
-        value={betaMax}
-        onChange={(e) => setBetaMax(e.target.value)}
-        className="border border-gray-300 rounded px-2 py-1 w-20 text-center"
-      />
-    </div>
+                  {/* Beta Max */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm font-medium text-gray-700">Beta Max</label>
+                    <input
+                      type="number"
+                      value={betaMax}
+                      onChange={(e) => setBetaMax(e.target.value)}
+                      className="border border-gray-300 rounded px-2 py-1 w-20 text-center"
+                    />
+                  </div>
 
-    {/* Diffuse button */}
-    <button
-      onClick={() => sendToBackend({ diffusionValue, betaMin, betaMax })}
-      className="bg-gray-900  text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-semibold"
-    >
-      Diffuse
-    </button>
-  </div>
-</div>
-
-
-                   
+                  {/* Diffuse button */}
+                  <button
+                    onClick={sendToBackend}
+                    className="bg-gray-900 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-semibold"
+                  >
+                    Diffuse
+                  </button>
+                </div>
+              </div>
             </>
           )}
         </main>

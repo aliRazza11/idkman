@@ -31,7 +31,7 @@ export default function ProtectedRoute({ children }) {
         checkAuth();
     }, []);
 
-    if (loading) return <p>Loading...</p>;
+    if (loading) return;
 
     return authenticated ? children : <Navigate to="/login" replace />;
 }
