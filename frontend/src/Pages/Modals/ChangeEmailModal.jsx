@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { api } from "../../services/api";
 
 export default function ChangeEmailModal({ onClose }) {
   const [email, setEmail] = useState("");
@@ -9,18 +10,8 @@ export default function ChangeEmailModal({ onClose }) {
   const handleSave = async (e) => {
     e.preventDefault();
     setLoading(true);
-
     try {
-      const res = await fetch("http://localhost:8000/settings", {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, old_password: password }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "Failed to update email");
-
+      const data = await api.updateSettings({ email, old_password: password });
       setMessage("✅ " + data.message);
     } catch (err) {
       setMessage("❌ " + err.message);
@@ -35,9 +26,7 @@ export default function ChangeEmailModal({ onClose }) {
         <h2 className="text-xl font-bold mb-4">Change Email</h2>
         <form onSubmit={handleSave} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              New Email
-            </label>
+            <label className="block text-sm font-medium mb-1">New Email</label>
             <input
               type="email"
               value={email}
@@ -46,9 +35,7 @@ export default function ChangeEmailModal({ onClose }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Current Password
-            </label>
+            <label className="block text-sm font-medium mb-1">Current Password</label>
             <input
               type="password"
               value={password}
@@ -65,10 +52,7 @@ export default function ChangeEmailModal({ onClose }) {
           </button>
         </form>
         {message && <p className="mt-3 text-sm">{message}</p>}
-        <button
-          onClick={onClose}
-          className="mt-4 w-full border rounded px-4 py-2"
-        >
+        <button onClick={onClose} className="mt-4 w-full border rounded px-4 py-2">
           Close
         </button>
       </div>
