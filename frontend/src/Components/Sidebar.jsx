@@ -1,4 +1,5 @@
 import { Menu as MenuIcon, LogOut, Settings, Download, Trash2 } from "lucide-react";
+import { forceDownload } from "../utils/download"; // adjust path if needed
 
 export default function Sidebar({
   collapsed,
@@ -35,13 +36,16 @@ export default function Sidebar({
             >
               <span className="truncate text-sm text-zinc-200">{item.name}</span>
               <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                <a
-                  href={item.downloadHref}
-                  download={item.name}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    forceDownload(item.downloadHref, item.name);
+                  }}
                   className="p-1 hover:bg-white/20 rounded"
                 >
                   <Download size={16} />
-                </a>
+                </button>
+
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
