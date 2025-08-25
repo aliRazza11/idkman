@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "mysql+aiomysql://root:1234@localhost:3306/diffusiondb"
     JWT_SECRET: str = "hello"
     JWT_ALG: str = "HS256"
-    ACCESS_TOKEN_TTL_MIN: int = 15
+    ACCESS_TOKEN_TTL_MIN: int = 40
     REFRESH_TOKEN_TTL_DAYS: int = 7
     COOKIE_DOMAIN: Optional[str] = None  # set in prod (e.g., .yourdomain.com)
     SECURE_COOKIES: bool = False          # True in prod over HTTPS

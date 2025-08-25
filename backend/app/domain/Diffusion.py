@@ -118,7 +118,7 @@ class Diffusion:
             eps = rng.normal(size=self.img_shape, loc=0.0, scale=1.0).astype(np.float32)
             xt = self.sqrt_one_minus_beta[i] * xt + np.sqrt(self.beta[i], dtype=np.float32) * eps
             print(self._compute_metrics(xt, self.x0)['Cosine'])
-            yield i, _uint8_from_float01(xt)
+            yield i, float(self.beta[i]), _uint8_from_float01(xt)
 
     def compute_metrics(self, xt: np.ndarray, xt0: np.ndarray) -> dict:
         """

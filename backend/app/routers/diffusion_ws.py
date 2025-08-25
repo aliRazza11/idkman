@@ -50,7 +50,7 @@ async def diffuse_ws(ws: WebSocket):
             last_encoded = None
             last_metrics = None
 
-            for t, frame in inst.frames():
+            for t,beta, frame in inst.frames():
                 if (t % stride) == 0 or (t == steps - 1):
                     encoded = (
                         ImageProcessor.array_to_data_url(frame, format="JPEG", quality=payload.quality)
@@ -71,6 +71,7 @@ async def diffuse_ws(ws: WebSocket):
 
                     msg = {
                         "t": t,
+                        "beta": beta,
                         "step": t + 1,
                         "progress": (t + 1) / steps,
                         "image": encoded,
@@ -84,6 +85,7 @@ async def diffuse_ws(ws: WebSocket):
             await ws.send_text(json.dumps({
                 "status": "done",
                 "t": steps - 1,
+                "beta": beta,
                 "step": steps,
                 "progress": 1.0,
                 "image": last_encoded,
