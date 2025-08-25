@@ -22,8 +22,11 @@ class ImageRepo:
         return db_image
 
     async def get_by_user(self, user_id: int) -> list[Image]:
-        result = await self.db.execute(select(Image).where(Image.user_id == user_id).order_by(Image.created_at.desc()))
-        return result.scalars().all()
+        try:
+            result = await self.db.execute(select(Image).where(Image.user_id == user_id).order_by(Image.created_at.desc()))
+            return result.scalars().all()
+        except Exception as e:
+            return []
 
     async def get_one_for_user(self, image_id: int, user_id: int) -> Image | None:
         result = await self.db.execute(select(Image).where(Image.id == image_id, Image.user_id == user_id))

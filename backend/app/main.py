@@ -4,12 +4,20 @@ from app.core.config import settings
 from app.routers import auth
 from app.db.session import engine
 from sqlalchemy import text
-from app.routers import image_router, diffusion_router, settings_router
+from app.routers import image_router, diffusion_router, settings_router, diffusion_ws
 import sys
 import asyncio
+import logging
+import time
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s")
+
 
 # if sys.platform.startswith("win"):
 #     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+logging.getLogger(settings.APP_NAME)
 
 app = FastAPI(title=settings.APP_NAME)
 add_cors(app)
@@ -17,6 +25,8 @@ add_cors(app)
 app.include_router(auth.router)
 app.include_router(diffusion_router.router)
 app.include_router(settings_router.router)
+app.include_router(diffusion_ws.router)
+
 
 
 app.include_router(image_router.router)

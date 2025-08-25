@@ -29,7 +29,7 @@ class BetaScheduler:
         self,
         steps: int,
         schedule: ScheduleType = "linear",
-        beta_start: float = 1e-4,
+        beta_start: float = 1e-3,
         beta_end: float = 2e-2,
         cosine_s: float = 8e-3,  # per Nichol & Dhariwal (cosine schedule)
     ):

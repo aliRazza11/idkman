@@ -62,6 +62,7 @@ class ImageProcessor:
         self._decoded_image = img
         return img
 
+
     # ---------- Introspection ----------
     def get_shape(self) -> Tuple[int, int, int]:
         if self._decoded_image is None:
@@ -89,7 +90,6 @@ class ImageProcessor:
                 pil = Image.fromarray(arr, mode="RGB")
         else:
             raise ValueError("Expected HxW or HxWx{1,3} uint8 array.")
-
         buff = BytesIO()
         save_kwargs = {}
         if format.upper() == "JPEG":
@@ -112,3 +112,21 @@ class ImageProcessor:
         }.get(format.upper(), "application/octet-stream")
         b64 = ImageProcessor.array_to_base64(arr, format=format, quality=quality)
         return f"data:{mime};base64,{b64}"
+
+def main():
+    import matplotlib.pyplot as plt
+    import base64
+
+    # safer path
+    with open("backend/_tests/images/img97.jpg", "rb") as f:
+        img_bytes = f.read()  # read all bytes
+        img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+
+    ip = ImageProcessor(img_b64)
+    img2 = ip.decode_image(max_side=28)
+    plt.imshow(img2)
+    plt.show()
+
+
+if __name__=="__main__":
+    main()

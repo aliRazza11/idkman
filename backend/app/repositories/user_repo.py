@@ -32,7 +32,6 @@ class UserRepo:
         return res.scalar_one_or_none() is not None
 
     async def create(self, email: str, username: str, password_hash: str) -> User:
-        print(" db issue here")
         user = User(email=email, username=username, password_hash=password_hash)
         self.db.add(user)
         await self.db.commit()

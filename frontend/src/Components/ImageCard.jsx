@@ -6,7 +6,12 @@ export default function ImageCard({ title, src, placeholder = "No image" }) {
       </h2>
       <div className="flex-1 flex items-center justify-center p-2 overflow-hidden">
         {src ? (
-          <img src={src} alt={title} className="max-h-full max-w-full object-contain" />
+          <img
+          src={src}
+          alt={title}
+          className="max-h-full max-w-full object-contain"
+          style={{ width: "800px", height: "600px", imageRendering: "pixelated"}}
+          />
         ) : (
           <div className="text-gray-400">{placeholder}</div>
         )}

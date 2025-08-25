@@ -1,21 +1,24 @@
 import { Menu as MenuIcon, LogOut, Settings, Download, Trash2 } from "lucide-react";
-import { forceDownload } from "../utils/download"; // adjust path if needed
+import { forceDownload } from "../utils/download"; // 👈 make sure you created this helper
+import { useNavigate } from "react-router-dom";
 
 export default function Sidebar({
   collapsed,
   setCollapsed,
   history,
-  onSelectItem,
   onDeleteItem,
   onSettings,
   onLogout,
 }) {
+  const navigate = useNavigate();
+
   return (
     <aside
       className={`transition-all duration-300 flex flex-col border-r border-zinc-200 ${
         collapsed ? "w-16" : "w-64"
       } bg-gray-900 text-white`}
     >
+      {/* Top bar */}
       <div className="flex items-center justify-between p-4 border-b border-zinc-700/50">
         {!collapsed && <span className="text-lg font-bold">DiffusionApp</span>}
         <button
@@ -26,16 +29,21 @@ export default function Sidebar({
         </button>
       </div>
 
+      {/* History list */}
       {!collapsed && (
         <nav className="flex-1 overflow-y-auto p-2 space-y-2">
           {history.map((item) => (
             <div
               key={item.id}
               className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/10 group cursor-pointer"
-              onClick={() => onSelectItem(item)}
+              onClick={() => {
+                // 👇 navigate to dashboard with selected image
+                navigate("/dashboard", { state: { image: item } });
+              }}
             >
               <span className="truncate text-sm text-zinc-200">{item.name}</span>
               <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                {/* Download */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -46,6 +54,7 @@ export default function Sidebar({
                   <Download size={16} />
                 </button>
 
+                {/* Delete */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -61,6 +70,7 @@ export default function Sidebar({
         </nav>
       )}
 
+      {/* Bottom actions */}
       <div className="p-2 border-t border-zinc-700/50 flex flex-col gap-1 mt-auto">
         <button
           onClick={onSettings}

@@ -56,7 +56,7 @@ export default function Controls({ diffusion, setDiffusion, onDiffuse }) {
           className="border border-gray-300 rounded px-2 py-1"
         >
           <option value="linear">Linear</option>
-          {/* You could add <option value="cosine">Cosine</option> later */}
+          <option value="cosine">Cosine</option>
         </select>
       </div>
 

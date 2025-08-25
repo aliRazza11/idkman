@@ -1,6 +1,6 @@
 # app/routers/diffusion.py
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, field_validator
 from fastapi import APIRouter, HTTPException
 
 from app.domain.Diffusion import Diffusion
@@ -15,12 +15,12 @@ class DiffuseRequest(BaseModel):
     seed: Optional[int] = None
 
     # Optional override for beta range
-    beta_start: Optional[float] = Field(None, ge=1e-8, le=0.5)
-    beta_end: Optional[float] = Field(None, ge=1e-8, le=0.5)
+    beta_start: Optional[float] = Field(None, ge=1e-8, le=0.001)
+    beta_end: Optional[float] = Field(None, ge=1e-8, le=0.02)
 
     return_data_url: bool = True  # return data URL for easy <img src=...>
 
-    @validator("image_b64")
+    @field_validator("image_b64")
     def not_empty(cls, v: str):
         if not v or len(v) < 16:
             raise ValueError("image_b64 looks invalid/empty")
@@ -38,13 +38,14 @@ async def diffuse(req: DiffuseRequest):
     Accepts base64/data-URL image + diffusion params and returns the diffused image.
     """
     try:
-        print('hereeee')
         inst = Diffusion(
             encoded_img=req.image_b64,
             steps=req.steps,
+            beta_start=req.beta_start,
+            beta_end=req.beta_end,
             beta_schedule=req.schedule,
             seed=req.seed,
-            max_side=2048,  # protect server from huge uploads
+            max_side=256,  # protect server from huge uploads
         )
 
         # For now: just return the final step (t = steps-1)

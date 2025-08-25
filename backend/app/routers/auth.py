@@ -15,7 +15,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=UserRead)
 async def signup(payload: UserCreate, resp: Response, db: AsyncSession = Depends(get_db)):
-    print("i got here")
     svc = AuthService(UserRepo(db))
     user = await svc.signup(payload.email, payload.username, payload.password)
     access, refresh = await svc.issue_tokens(user.id)
