@@ -6,6 +6,7 @@ import Sidebar from "../../Components/Sidebar";
 import NoticeModal from "../../Components/NoticeModal";
 import UploadButton from "../../Components/UploadButton";
 import ImageCard from "../../Components/ImageCard";
+import BetaChart from "../../Components/BetaChart";
 import Controls from "../../Components/Controls";
 import DeleteModal from "../../Components/DeleteModal";
 import ImageViewerModal from "../../Components/ImageViewerModal";
@@ -70,18 +71,21 @@ const {
   // websocket + rest (custom hook)
   const { fastDiffuse, slowDiffuse, cancel: cancelStream, wsRef } = useDiffusionStream({ api });
 
-  const chartPoints = useMemo(
-    () =>
-      frames
-        .map((f) => {
-          const c = f?.metrics?.Cosine;
-          return typeof c === "number" && isFinite(c)
-            ? { x: f.globalT, residual: 1 - c }
-            : null;
-        })
-        .filter(Boolean),
-    [frames]
-  );
+const chartPoints = useMemo(
+  () =>
+    frames
+      .map((f) => {
+        const c = f?.metrics?.Cosine;
+        const b = f?.betas;
+        return {
+          x: f.globalT,
+          residual: typeof c === "number" && isFinite(c) ? 1 - c : null,
+          beta: typeof b === "number" && isFinite(b) ? b : null,
+        };
+      })
+      .filter((p) => p.residual !== null || p.beta !== null),
+  [frames]
+);
 
 const { history, refreshHistory, removeById, addOrUpdate } = useImageHistory();
   const canDiffuse = Boolean(uploadedImageDataUrl);
@@ -500,8 +504,10 @@ const diffuse = useCallback(async () => {
                 />
                 <div id="noise-chart-anchor">
                   <NoiseChart chartPoints={chartPoints} scrubT={scrubT} setScrubT={setScrubT} />
+                  <BetaChart chartPoints={chartPoints} scrubT={scrubT} setScrubT={setScrubT} />
                 </div>
               </section>
+              
             )}
           </>
         )}

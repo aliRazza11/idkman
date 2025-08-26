@@ -1,4 +1,4 @@
-// src/Components/NoiseChart.jsx
+// src/Components/BetaChart.jsx
 import {
   ResponsiveContainer,
   LineChart,
@@ -11,14 +11,14 @@ import {
   ReferenceDot,
 } from "recharts";
 
-export default function NoiseChart({ chartPoints, scrubT, setScrubT }) {
+export default function BetaChart({ chartPoints, scrubT, setScrubT }) {
   if (!chartPoints.length) return null;
   const latest = chartPoints[chartPoints.length - 1];
 
   return (
-    <div className="w-full">
+    <div className="w-full mt-6">
       <div className="text-sm font-medium text-gray-700 mb-2 text-center">
-        Noise Residual (1 − cosine)
+        Beta Schedule
       </div>
       <div className="w-full h-56 bg-white rounded-lg border p-2">
         <ResponsiveContainer width="100%" height="100%">
@@ -33,17 +33,17 @@ export default function NoiseChart({ chartPoints, scrubT, setScrubT }) {
           >
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="x" />
-            <YAxis domain={[0, 1]} />
+            <YAxis domain={["auto", "auto"]} />
             <Tooltip
               formatter={(v) =>
-                v != null && !isNaN(v) ? Number(v).toFixed(4) : "—"
+                v != null && !isNaN(v) ? Number(v).toExponential(3) : "—"
               }
               labelFormatter={(l) => `global t = ${l}`}
             />
             <Line
               type="monotone"
-              dataKey="residual"
-              stroke="#2563eb"
+              dataKey="beta"
+              stroke="#16a34a"
               strokeWidth={2}
               dot={false}
               isAnimationActive={false}
@@ -54,7 +54,7 @@ export default function NoiseChart({ chartPoints, scrubT, setScrubT }) {
             {scrubT != null && (
               <ReferenceDot
                 x={scrubT}
-                y={chartPoints.find((p) => p.x === scrubT)?.residual}
+                y={chartPoints.find((p) => p.x === scrubT)?.beta}
                 r={5}
               />
             )}
@@ -62,9 +62,9 @@ export default function NoiseChart({ chartPoints, scrubT, setScrubT }) {
         </ResponsiveContainer>
       </div>
       <div className="mt-1 text-xs text-gray-500 text-center">
-        {latest?.residual != null
-          ? `Latest: global t=${latest.x}, residual=${latest.residual.toFixed(4)}`
-          : `Latest: global t=${latest?.x ?? "—"}, residual=—`}
+        {latest?.beta != null
+          ? `Latest: global t=${latest.x}, beta=${latest.beta.toExponential(3)}`
+          : `Latest: global t=${latest?.x ?? "—"}, beta=—`}
       </div>
     </div>
   );
