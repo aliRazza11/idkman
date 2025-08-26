@@ -13,7 +13,12 @@ export default function ImageCard({ title, src, placeholder = "No image" }) {
           style={{ width: "800px", height: "600px", imageRendering: "pixelated"}}
           />
         ) : (
-          <div className="text-gray-400">{placeholder}</div>
+          <div
+            className="text-gray-400 flex items-center justify-center text-xl"
+            style={{ width: "800px", height: "600px" }}
+          >
+            {placeholder}
+          </div>
         )}
       </div>
     </div>

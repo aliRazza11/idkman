@@ -1,9 +1,21 @@
-
-export default function Controls({ diffusion, setDiffusion, onDiffuse }) {
+export default function Controls({ diffusion, setDiffusion, mode, setMode }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-6">
+    <div className=" flex flex-wrap justify-center items-center gap-6 text-center">
+      {/* Mode */}
+      <div className="flex flex-col items-center">
+        <label className="text-sm font-medium text-gray-700 mb-1">Mode</label>
+        <select
+          className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm"
+          value={mode}
+          onChange={(e) => setMode(e.target.value)}
+        >
+          <option value="fast">Fast diffusion (REST)</option>
+          <option value="slow">Slow diffusion (WebSocket)</option>
+        </select>
+      </div>
+
       {/* Steps */}
-      <div className="flex flex-col items-center w-64">
+      <div className="flex flex-col items-center">
         <label className="text-sm font-medium text-gray-700 mb-1">
           Steps: {diffusion.steps}
         </label>
@@ -15,13 +27,13 @@ export default function Controls({ diffusion, setDiffusion, onDiffuse }) {
           onChange={(e) =>
             setDiffusion((p) => ({ ...p, steps: e.target.value }))
           }
-          className="w-full accent-black"
+          className="w-64 accent-black"
         />
       </div>
 
       {/* Beta Min */}
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Beta Min</label>
+      <div className="flex flex-col items-center">
+        <label className="text-sm font-medium text-gray-700 mb-1">Beta Min</label>
         <input
           type="number"
           value={diffusion.betaMin}
@@ -33,8 +45,8 @@ export default function Controls({ diffusion, setDiffusion, onDiffuse }) {
       </div>
 
       {/* Beta Max */}
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Beta Max</label>
+      <div className="flex flex-col items-center">
+        <label className="text-sm font-medium text-gray-700 mb-1">Beta Max</label>
         <input
           type="number"
           value={diffusion.betaMax}
@@ -45,9 +57,9 @@ export default function Controls({ diffusion, setDiffusion, onDiffuse }) {
         />
       </div>
 
-      {/* Schedule (future-ready) */}
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-700">Schedule</label>
+      {/* Schedule */}
+      <div className="flex flex-col items-center">
+        <label className="text-sm font-medium text-gray-700 mb-1">Schedule</label>
         <select
           value={diffusion.schedule}
           onChange={(e) =>
@@ -59,14 +71,6 @@ export default function Controls({ diffusion, setDiffusion, onDiffuse }) {
           <option value="cosine">Cosine</option>
         </select>
       </div>
-
-      {/* Diffuse button */}
-      <button
-        onClick={onDiffuse}
-        className="bg-gray-900 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition font-semibold"
-      >
-        Diffuse
-      </button>
     </div>
   );
 }
