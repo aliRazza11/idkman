@@ -32,13 +32,10 @@ export default function Dashboard() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState(null);
   const [viewerImage, setViewerImage] = useState(null);
-  const [username, setUsername] = useState("");
 
-  // NEW: analysis button becomes available after first diffuse click
   const [analysisAvailable, setAnalysisAvailable] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(false);
 
-  // Active image state
   const [uploadedImage, setUploadedImage] = useState(null);
   const [uploadedImageDataUrl, setUploadedImageDataUrl] = useState(null);
   const [currentImageKey, setCurrentImageKey] = useState(null);
@@ -109,10 +106,6 @@ export default function Dashboard() {
     [frames]
   );
 
-  // Username
-  useEffect(() => {
-    (async () => setUsername((await getCurrentUsername()) || ""))();
-  }, []);
 
   // Preload from router state
   useEffect(() => {
