@@ -14,6 +14,7 @@ async function http(url, options = {}) {
 }
 
 export const api = {
+  get: (path) => http(path),
   fetchImages: () => http("/images"),
     me: () => http("/auth/me"),
 

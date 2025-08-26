@@ -2,9 +2,8 @@
 from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.models.image import Image
-from app.schemas.image import ImageCreate
-
+from app.models.image import Image, Mnist
+from app.schemas.image import ImageCreate, MnistOut
 class ImageRepo:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -35,3 +34,14 @@ class ImageRepo:
     async def delete(self, image: Image) -> None:
         await self.db.delete(image)
         await self.db.commit()
+
+
+
+class MnistRepo:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    async def get_by_digit(self, digit: int) -> list[Mnist]:
+        result = await self.db.execute(
+            select(Mnist).where(Mnist.digit == digit).order_by(Mnist.sample_index.asc())
+        )
+        return result.scalars().all()

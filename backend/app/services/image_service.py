@@ -1,8 +1,8 @@
 # app/services/image_service.py
 from __future__ import annotations
-from app.repositories.image_repo import ImageRepo
+from app.repositories.image_repo import ImageRepo, MnistRepo
 from app.schemas.image import ImageCreate
-from app.models.image import Image
+from app.models.image import Image, Mnist
 
 class ImageService:
     def __init__(self, image_repo: ImageRepo):
@@ -19,3 +19,10 @@ class ImageService:
 
     async def delete_image(self, image: Image) -> None:
         return await self.image_repo.delete(image)
+
+class MnistService:
+    def __init__(self, repo: MnistRepo):
+        self.repo = repo
+
+    async def get_images_for_digit(self, digit: int) -> list[Mnist]:
+        return await self.repo.get_by_digit(digit)

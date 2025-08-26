@@ -5,13 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
 from app.db.session import get_db
-from app.schemas.image import ImageCreate, ImageOut
-from app.repositories.image_repo import ImageRepo
-from app.services.image_service import ImageService
+from app.schemas.image import ImageCreate, ImageOut, MnistOut
+from app.repositories.image_repo import ImageRepo, MnistRepo
+from app.services.image_service import ImageService, MnistService
 from app.services.auth_service import AuthService
 from app.models.user import User
 from app.repositories.user_repo import UserRepo
-
+from fastapi.responses import StreamingResponse
+from io import BytesIO
 router = APIRouter(prefix="/images", tags=["Images"])
 
 async def get_current_user_dep(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -66,3 +67,18 @@ async def delete_image(
         raise HTTPException(status_code=404, detail="Not found")
     await svc.delete_image(img)
     return Response(status_code=204)
+
+
+@router.get("/digit/{digit}", response_model=List[MnistOut])
+async def get_images_by_digit(
+    digit: int,
+    db: AsyncSession = Depends(get_db)
+):
+    if digit < 0 or digit > 9:
+        raise HTTPException(status_code=400, detail="Digit must be between 0 and 9")
+
+    svc = MnistService(MnistRepo(db))
+    images = await svc.get_images_for_digit(digit)
+    if not images:
+        raise HTTPException(status_code=404, detail="No images found for this digit")
+    return images

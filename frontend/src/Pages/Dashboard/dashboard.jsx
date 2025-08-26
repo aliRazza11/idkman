@@ -19,7 +19,6 @@ import usePerImageTimeline from "../../hooks/usePerImageTimeline";
 import useDiffusionStream from "../../hooks/useDiffusionStream";
 
 import { api } from "../../services/api";
-import { getCurrentUsername } from "../../utils/user";
 import { toUiImage, fileToDataURL, clamp } from "../../utils/image";
 
 export default function Dashboard() {
@@ -59,6 +58,13 @@ export default function Dashboard() {
   const [invalidFileOpen, setInvalidFileOpen] = useState(false);
   const [invalidFileMsg, setInvalidFileMsg] = useState("");
 
+  // --- MNIST picker state ---
+  const [showMnistSelector, setShowMnistSelector] = useState(false);
+  const [mnistDigit, setMnistDigit] = useState(null);
+  const [mnistImages, setMnistImages] = useState([]);
+  const [mnistLoading, setMnistLoading] = useState(false);
+  const [mnistError, setMnistError] = useState("");
+
   // Per-image timeline (IndexedDB-backed)
   const {
     frames,
@@ -85,8 +91,6 @@ export default function Dashboard() {
   const canDiffuse = Boolean(uploadedImageDataUrl);
 
   // --- Live follow flag ---
-  // When true, the Diffused Image card keeps following streamed frames.
-  // If user scrubs the timeline in the modal, we pause following until modal closes.
   const [followStream, setFollowStream] = useState(true);
 
   // Derived chart data
@@ -105,7 +109,6 @@ export default function Dashboard() {
         .filter((p) => p.residual !== null || p.beta !== null),
     [frames]
   );
-
 
   // Preload from router state
   useEffect(() => {
@@ -363,8 +366,7 @@ export default function Dashboard() {
           return next;
         });
 
-        // 🔴 Live streaming into the Diffused Image card
-        // Follow the stream unless user is scrubbing inside the modal
+        // Live streaming into the Diffused Image card
         if (followStream && frame.image) {
           setDiffusedImage(frame.image);
         }
@@ -423,9 +425,7 @@ export default function Dashboard() {
 
   const handleCloseAnalysis = useCallback(() => {
     setShowAnalysis(false);
-    // When modal closes, resume live stream view
     setFollowStream(true);
-    // also reset scrub so we’re back to live
     setScrubT(null);
   }, [setScrubT]);
 
@@ -439,7 +439,85 @@ export default function Dashboard() {
     }
   }, [navigate]);
 
-  // Derived
+  // --- MNIST handlers ---
+  const openMnistSelector = useCallback(() => {
+    setShowMnistSelector(true);
+    setMnistDigit(null);
+    setMnistImages([]);
+    setMnistLoading(false);
+    setMnistError("");
+  }, []);
+
+  const fetchMnistForDigit = useCallback(
+    async (d) => {
+      setMnistLoading(true);
+      setMnistError("");
+      try {
+        // Expecting: [{ id, digit, sample_index, image_data }, ...] (20 items)
+        const res = await api.get(`/images/digit/${d}`);
+        // if your api wrapper returns {data}, use res.data
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        setMnistImages(list);
+      } catch (e) {
+        console.error(e);
+        setMnistError("Failed to load MNIST samples. Please try again.");
+      } finally {
+        setMnistLoading(false);
+      }
+    },
+    [setMnistImages]
+  );
+
+  const handleChooseMnistDigit = useCallback(
+    async (d) => {
+      setMnistDigit(d);
+      await fetchMnistForDigit(d);
+    },
+    [fetchMnistForDigit]
+  );
+
+const handlePickMnistImage = useCallback(
+  async (img) => {
+    try {
+      // Convert base64 → Blob
+      const byteCharacters = atob(img.image_data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: "image/png" });
+
+      // Wrap in a File (so api.uploadImage works)
+      const file = new File([blob], `mnist-${img.digit}-${img.sample_index}.png`, {
+        type: "image/png",
+      });
+
+      // Upload to backend (will persist in DB)
+      const item = await api.uploadImage(file);
+      const uiItem = toUiImage(item);
+
+      // Add to sidebar immediately
+      addOrUpdate(uiItem);
+
+      // Switch to the uploaded image (stable id from DB)
+      await switchToImage(uiItem.id, uiItem.url, uiItem.url);
+
+      // Refresh history from server (optional sync)
+      refreshHistory();
+
+      // Close modal
+      setShowMnistSelector(false);
+      setMnistImages([]);
+      setMnistDigit(null);
+    } catch (err) {
+      console.error("Failed to pick MNIST image:", err);
+    }
+  },
+  [switchToImage, addOrUpdate, refreshHistory]
+);
+
+
   const totalSteps = clamp(Number(diffusion.steps) || 1, 1, 1000);
 
   // --- RENDER ---
@@ -464,7 +542,6 @@ export default function Dashboard() {
         className="flex flex-col overflow-y-auto h-screen"
         style={{ marginLeft: collapsed ? "4rem" : "16rem" }}
       >
-
         <main className="flex flex-col">
           {!uploadedImage ? (
             <div className="flex-1 flex flex-col items-center justify-center p-6">
@@ -480,12 +557,21 @@ export default function Dashboard() {
                   className="hidden"
                 />
               </label>
-              <button
-                onClick={refreshHistory}
-                className="mt-6 text-sm text-gray-600 underline hover:no-underline"
-              >
-                Refresh history
-              </button>
+
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={openMnistSelector}
+                  className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-bold hover:bg-gray-800"
+                >
+                  Choose MNIST Digit
+                </button>
+                <button
+                  onClick={refreshHistory}
+                  className="text-sm text-gray-600 underline hover:no-underline"
+                >
+                  Refresh history
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -494,69 +580,72 @@ export default function Dashboard() {
                 {/* Original */}
                 <div className="flex flex-col gap-3">
                   <ImageCard title="Original Image" src={uploadedImage} />
-                  <div className="flex justify-center mt-2">
+                  <div className="flex justify-center mt-2 gap-3">
                     <UploadButton onSelect={handleUpload} label="Upload Image" compact />
+                    <button
+                      onClick={openMnistSelector}
+                      className="px-3 py-2 rounded-lg bg-gray-800 text-white text-sm font-bold hover:bg-gray-700"
+                    >
+                      Pick MNIST
+                    </button>
                   </div>
                 </div>
-
 
                 {/* Diffused */}
                 <div className="flex flex-col gap-3">
                   <ImageCard
-            title={
-              mode === "slow"
-                ? `Diffused Image ${isStreaming ? `(step ${currentStep} / ${totalSteps})` : ""}`
-                : "Diffused Image"
-            }
-
+                    title={
+                      mode === "slow"
+                        ? `Diffused Image ${isStreaming ? `(step ${currentStep} / ${totalSteps})` : ""}`
+                        : "Diffused Image"
+                    }
                     src={diffusedImage}
                     placeholder="Click Diffuse to generate image"
                   />
-<div className="flex justify-center gap-3 mt-2">
-  <button
-    onClick={diffuse}
-    disabled={!canDiffuse}
-    className={`px-4 py-2 rounded-lg text-sm font-bold ${
-      canDiffuse
-        ? "bg-gray-900 text-white hover:bg-gray-800"
-        : "bg-gray-400 text-gray-200 cursor-not-allowed"
-    }`}
-  >
-    Diffuse
-  </button>
 
-  {mode === "slow" && isStreaming && (
-    <button
-      onClick={cancelStream}
-      className="px-4 py-2 rounded-lg font-bold bg-red-600 text-white text-sm hover:bg-red-700"
-    >
-      Cancel
-    </button>
-  )}
+                  <div className="flex justify-center gap-3 mt-2">
+                    <button
+                      onClick={diffuse}
+                      disabled={!canDiffuse}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold ${
+                        canDiffuse
+                          ? "bg-gray-900 text-white hover:bg-gray-800"
+                          : "bg-gray-400 text-gray-200 cursor-not-allowed"
+                      }`}
+                    >
+                      Diffuse
+                    </button>
 
-  {analysisAvailable && (
-    <button
-      onClick={() => setShowAnalysis(true)}
-      className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-bold hover:bg-gray-800"
-    >
-      View Timeline & Graphs
-    </button>
-  )}
-</div>
+                    {mode === "slow" && isStreaming && (
+                      <button
+                        onClick={cancelStream}
+                        className="px-4 py-2 rounded-lg font-bold bg-red-600 text-white text-sm hover:bg-red-700"
+                      >
+                        Cancel
+                      </button>
+                    )}
 
+                    {analysisAvailable && (
+                      <button
+                        onClick={() => setShowAnalysis(true)}
+                        className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-bold hover:bg-gray-800"
+                      >
+                        View Timeline & Graphs
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-                {/* Controls */}
-                <div className=" bottom-0 bg-white border-t p-6">
-    <Controls
-      diffusion={diffusion}
-      setDiffusion={setDiffusion}
-      mode={mode}
-      setMode={setMode}
-    />
-  </div>
-
+              {/* Controls */}
+              <div className="bottom-0 bg-white border-t p-6">
+                <Controls
+                  diffusion={diffusion}
+                  setDiffusion={setDiffusion}
+                  mode={mode}
+                  setMode={setMode}
+                />
+              </div>
             </>
           )}
         </main>
@@ -606,7 +695,7 @@ export default function Dashboard() {
                 <p className="text-center text-sm mt-1">Original</p>
               </div>
               <div className="border rounded-lg bg-white p-2">
-                <img src={diffusedImage} alt="Diffused" className="w-full h-40 object-contain" />
+                <img src={diffusedImage} alt="Diffused" style={{imageRendering:"pixelated"}}className="w-full h-40 object-contain" />
                 <p className="text-center text-sm mt-1">Diffused</p>
               </div>
             </div>
@@ -615,7 +704,7 @@ export default function Dashboard() {
             <TimelineStrip
               frames={frames}
               scrubT={scrubT}
-              setScrubT={handleSetScrubT} // ⬅️ pause live follow while scrubbing
+              setScrubT={handleSetScrubT}
               timelineRef={timelineRef}
               rememberScroll={rememberScroll}
               restoreScroll={restoreScroll}
@@ -627,6 +716,103 @@ export default function Dashboard() {
               <NoiseChart chartPoints={chartPoints} scrubT={scrubT} setScrubT={handleSetScrubT} />
               <BetaChart chartPoints={chartPoints} scrubT={scrubT} setScrubT={handleSetScrubT} />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🧠 MNIST Selector Modal (two-step: choose digit → choose one of 20 samples) */}
+      {showMnistSelector && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">
+                {mnistImages.length ? `Select an MNIST image for digit ${mnistDigit}` : "Select an MNIST Digit"}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowMnistSelector(false);
+                  setMnistImages([]);
+                  setMnistDigit(null);
+                  setMnistError("");
+                }}
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            {!mnistImages.length ? (
+              <>
+                {mnistError && (
+                  <p className="text-sm text-red-600 mb-3">{mnistError}</p>
+                )}
+                <div className="grid grid-cols-5 gap-2">
+                  {Array.from({ length: 10 }).map((_, d) => (
+                    <button
+                      key={d}
+                      onClick={() => handleChooseMnistDigit(d)}
+                      className={`px-3 py-2 border rounded-lg text-sm font-bold ${
+                        mnistDigit === d ? "bg-gray-900 text-white" : "bg-gray-100 hover:bg-gray-200"
+                      }`}
+                      disabled={mnistLoading}
+                    >
+                      {mnistLoading && mnistDigit === d ? "Loading…" : d}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-4 text-xs text-gray-500">
+                  Pick a digit to load 20 sample images from your `/images/digit` endpoint.
+                </p>
+              </>
+            ) : (
+              <>
+                {mnistError && (
+                  <p className="text-sm text-red-600 mb-3">{mnistError}</p>
+                )}
+                <div className="grid grid-cols-5 gap-4">
+                  {mnistImages.map((img) => (
+                    <button
+                      key={img.id}
+                      onClick={() => handlePickMnistImage(img)}
+                      className="border rounded-lg overflow-hidden hover:ring-2 hover:ring-gray-600 bg-white"
+                      title={`Digit ${img.digit} • Sample ${img.sample_index}`}
+                    >
+                      <img
+                        src={`data:image/png;base64,${img.image_data}`}
+                        alt={`MNIST ${img.digit}`}
+                        className="w-24 h-24 object-contain mx-auto my-2"
+                      />
+                      <div className="text-center text-xs text-gray-600 mb-2">
+                        #{img.sample_index}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-center mt-6">
+                  <button
+                    onClick={() => {
+                      setMnistImages([]);
+                      setMnistError("");
+                    }}
+                    className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-sm"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMnistSelector(false);
+                      setMnistImages([]);
+                      setMnistDigit(null);
+                      setMnistError("");
+                    }}
+                    className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-bold hover:bg-gray-800"
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

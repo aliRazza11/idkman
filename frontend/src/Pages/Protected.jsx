@@ -14,8 +14,6 @@ export default function ProtectedRoute({ children }) {
                     credentials: "include",
                 });
 
-                console.log("res", res)
-
                 if (res.ok) {
                     setAuthenticated(true);
                 } else {
