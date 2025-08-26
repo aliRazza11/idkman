@@ -91,16 +91,12 @@ export default function HomePage() {
       <h3 className="text-2xl font-bold text-white">
         How would you like to continue?
       </h3>
-      <p className="text-sm text-white">
-        Try as a guest for a quick preview or sign up to save your work.
-      </p>
-
       <div className="flex flex-col md:flex-row gap-4 justify-center">
         <button
-          onClick={() => handleChoice("/dashboard")}
+          onClick={() => handleChoice("/login")}
           className="flex-1 bg-black/70 backdrop-blur-sm hover:bg-blue-500/10 text-white px-6 py-3 rounded-lg font-semibold transition-colors shadow-lg"
         >
-          Try as Guest
+          Login
         </button>
         <button
           onClick={() => handleChoice("/signup")}
