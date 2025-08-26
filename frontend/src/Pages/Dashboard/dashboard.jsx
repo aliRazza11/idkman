@@ -3,6 +3,7 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from "react"
 import { useNavigate, useLocation } from "react-router-dom";
 
 import Sidebar from "../../Components/Sidebar";
+import NoticeModal from "../../Components/NoticeModal";
 import UploadButton from "../../Components/UploadButton";
 import ImageCard from "../../Components/ImageCard";
 import Controls from "../../Components/Controls";
@@ -26,6 +27,8 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const preloaded = location.state?.image;
+  const [invalidFileOpen, setInvalidFileOpen] = useState(false);
+  const [invalidFileMsg, setInvalidFileMsg] = useState("");
 
   // Sidebar / auth
   const [collapsed, setCollapsed] = useState(false);
@@ -170,36 +173,39 @@ export default function Dashboard() {
     ]
   );
 
-  const handleUpload = useCallback(
-    async (file) => {
-      if (!file) return;
+const handleUpload = useCallback(
+  async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setInvalidFileMsg("Please upload a valid image file (JPG, PNG, WEBP, etc.).");
+      setInvalidFileOpen(true);
+      return;
+    }
 
-      // persist current image’s frames
-      if (currentImageKey) saveFramesForImage(currentImageKey, frames);
+    if (currentImageKey) saveFramesForImage(currentImageKey, frames);
+    const objectUrl = URL.createObjectURL(file);
+    const dataUrl = await fileToDataURL(file);
 
-      // temp preview
-      const objectUrl = URL.createObjectURL(file);
-      const dataUrl = await fileToDataURL(file);
+    // switch immediately (no key yet)
+    switchToImage(null, objectUrl, dataUrl);
 
-      // switch immediately (no key yet)
-      switchToImage(null, objectUrl, dataUrl);
+    try {
+      const item = await api.uploadImage(file);
+      const uiItem = toUiImage(item);
+      setHistory((prev) => [uiItem, ...prev]);
+      // now we have a stable id: re-switch
+      switchToImage(uiItem.id, uiItem.url, uiItem.url);
+    } catch (err) {
+      console.error(err);
+      // keep temp image with null key
+    } finally {
+      // cleanup object URL (not the dataUrl)
+      URL.revokeObjectURL(objectUrl);
+    }
+  },
+  [api, currentImageKey, frames, saveFramesForImage, setHistory, switchToImage]
+);
 
-      try {
-        const item = await api.uploadImage(file);
-        const uiItem = toUiImage(item);
-        setHistory((prev) => [uiItem, ...prev]);
-        // now we have a stable id: re-switch
-        switchToImage(uiItem.id, uiItem.url, uiItem.url);
-      } catch (err) {
-        console.error(err);
-        // keep temp image with null key
-      } finally {
-        // cleanup object URL (not the dataUrl)
-        URL.revokeObjectURL(objectUrl);
-      }
-    },
-    [api, currentImageKey, frames, saveFramesForImage, setHistory, switchToImage]
-  );
 
   const handleSelectFromSidebar = useCallback(
     (item) => {
@@ -478,6 +484,13 @@ export default function Dashboard() {
           onClose={() => setViewerImage(null)}
         />
       )}
+      <NoticeModal
+        open={invalidFileOpen}
+        title="Invalid file type"
+        message={invalidFileMsg}
+        onClose={() => setInvalidFileOpen(false)}
+      />
+
     </div>
   );
 }
