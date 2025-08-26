@@ -81,7 +81,7 @@ export default function Dashboard() {
     [frames]
   );
 
-  const { history, setHistory, refreshHistory } = useImageHistory();
+const { history, refreshHistory, removeById, addOrUpdate } = useImageHistory();
   const canDiffuse = Boolean(uploadedImageDataUrl);
 
   // Username
@@ -173,16 +173,22 @@ export default function Dashboard() {
     ]
   );
 
+
 const handleUpload = useCallback(
   async (file) => {
     if (!file) return;
+
+    // ✅ check file type
     if (!file.type.startsWith("image/")) {
-      setInvalidFileMsg("Please upload a valid image file (JPG, PNG, WEBP, etc.).");
+      setInvalidFileMsg("Please upload a valid image file (JPG, PNG, WEBP, etc.)");
       setInvalidFileOpen(true);
       return;
     }
 
+    // persist current image’s frames
     if (currentImageKey) saveFramesForImage(currentImageKey, frames);
+
+    // temp preview
     const objectUrl = URL.createObjectURL(file);
     const dataUrl = await fileToDataURL(file);
 
@@ -192,19 +198,33 @@ const handleUpload = useCallback(
     try {
       const item = await api.uploadImage(file);
       const uiItem = toUiImage(item);
-      setHistory((prev) => [uiItem, ...prev]);
-      // now we have a stable id: re-switch
+
+      // ✅ add new item optimistically
+      addOrUpdate(uiItem);
+
+      // re-switch with server id
       switchToImage(uiItem.id, uiItem.url, uiItem.url);
+
+      // optional: background refresh to sync
+      refreshHistory();
     } catch (err) {
       console.error(err);
       // keep temp image with null key
     } finally {
-      // cleanup object URL (not the dataUrl)
       URL.revokeObjectURL(objectUrl);
     }
   },
-  [api, currentImageKey, frames, saveFramesForImage, setHistory, switchToImage]
+  [
+    api,
+    currentImageKey,
+    frames,
+    saveFramesForImage,
+    switchToImage,
+    addOrUpdate,
+    refreshHistory,
+  ]
 );
+
 
 
   const handleSelectFromSidebar = useCallback(
@@ -216,24 +236,30 @@ const handleUpload = useCallback(
   );
 
   const confirmDelete = useCallback(async () => {
-    if (!selectedForDelete) return;
-    try {
-      if (currentImageKey === selectedForDelete.id) {
-        try {
-          sessionStorage.removeItem(`frames:${currentImageKey}`);
-        } catch {}
-        switchToImage(null, null, null);
-      }
-      await api.deleteImage(selectedForDelete.id);
-      setHistory((h) => h.filter((x) => x.id !== selectedForDelete.id));
-      await refreshHistory();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSelectedForDelete(null);
-      setShowDeleteModal(false);
-    }
-  }, [api, currentImageKey, selectedForDelete, refreshHistory, setHistory, switchToImage]);
+  if (!selectedForDelete) return;
+  const id = selectedForDelete.id;
+
+  if (currentImageKey === id) {
+    try { sessionStorage.removeItem(`frames:${currentImageKey}`); } catch {}
+    switchToImage(null, null, null);
+  }
+
+  // ✅ optimistic removal
+  removeById(id);
+
+  try {
+    await api.deleteImage(id);
+    refreshHistory(); // background re-sync
+    setUploadedImage(null)
+    console.log(uploadedImage)
+  } catch (e) {
+    console.error("Delete failed:", e);
+    // optional rollback here
+  } finally {
+    setSelectedForDelete(null);
+    setShowDeleteModal(false);
+  }
+}, [selectedForDelete, currentImageKey, removeById, refreshHistory, switchToImage]);
 
   const diffuse = useCallback(async () => {
     if (!canDiffuse) {
