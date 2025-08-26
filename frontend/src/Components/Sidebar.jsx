@@ -13,11 +13,12 @@ export default function Sidebar({
   const navigate = useNavigate();
 
   return (
-    <aside
-      className={`transition-all duration-300 flex flex-col border-r border-zinc-200 ${
-        collapsed ? "w-16" : "w-64"
-      } bg-gray-900 text-white`}
-    >
+<aside
+  className={`fixed inset-y-0 left-0 z-40 flex flex-col
+              transition-all duration-300
+              ${collapsed ? "w-16" : "w-64"}
+              bg-gray-900 text-white border-r border-zinc-200`}
+>
       {/* Top bar */}
       <div className="flex items-center justify-between p-4 border-b border-zinc-700/50">
         {!collapsed && <span className="text-lg font-bold">DiffusionApp</span>}

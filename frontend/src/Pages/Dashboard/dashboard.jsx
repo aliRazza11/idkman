@@ -392,149 +392,141 @@ const diffuse = useCallback(async () => {
   // derived
   const totalSteps = clamp(Number(diffusion.steps) || 1, 1, 1000);
 
-  return (
-    <div className="min-h-screen flex bg-gray-100 text-gray-900">
-      <Sidebar
-        collapsed={collapsed}
-        setCollapsed={setCollapsed}
-        history={history}
-        onSelectItem={handleSelectFromSidebar}
-        onDeleteItem={(item) => {
-          setSelectedForDelete(item);
-          setShowDeleteModal(true);
-        }}
-        onSettings={() => navigate("/settings")}
-        onLogout={handleLogout}
-      />
+ return (
+  <div className="h-screen w-screen overflow-hidden bg-gray-100 text-gray-900">
+    {/* Sidebar is fixed and full-height (self-contained inside Sidebar.jsx) */}
+    <Sidebar
+      collapsed={collapsed}
+      setCollapsed={setCollapsed}
+      history={history}
+      onSelectItem={handleSelectFromSidebar}
+      onDeleteItem={(item) => {
+        setSelectedForDelete(item);
+        setShowDeleteModal(true);
+      }}
+      onSettings={() => navigate("/settings")}
+      onLogout={handleLogout}
+    />
 
-      <div className="flex-1 flex flex-col">
-        <header className="bg-white shadow p-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold">
-            Welcome {username}, Ready to explore diffusion?
-          </h1>
-        </header>
+    {/* Main content pushed right by sidebar width */}
+    <div
+      className="flex flex-col overflow-y-auto h-screen"
+      style={{ marginLeft: collapsed ? "4rem" : "16rem" }} // 64px when collapsed, 256px expanded
+    >
+      <header className="bg-white shadow p-4 border-b border-gray-200 sticky top-0 z-10">
+        <h1 className="text-xl font-bold">
+          Welcome {username}, Ready to explore diffusion?
+        </h1>
+      </header>
 
-        <main className="flex flex-col">
-          {!uploadedImage ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6">
-              <label className="flex flex-col items-center justify-center w-full max-w-lg h-64 border-2 border-dashed border-gray-400 rounded-2xl cursor-pointer bg-gray-50 hover:bg-gray-100">
-                <UploadButton onSelect={handleUpload} label="Choose File" />
-                <p className="mt-3 text-sm text-gray-500">
-                  Drag & drop an image here, or click to select
-                </p>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleUpload(e.target.files[0])}
-                  className="hidden"
-                />
-              </label>
-              <button
-                onClick={refreshHistory}
-                className="mt-6 text-sm text-gray-600 underline hover:no-underline"
-              >
-                Refresh history
-              </button>
+      <main className="flex flex-col">
+        {!uploadedImage ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6">
+            <label className="flex flex-col items-center justify-center w-full max-w-lg h-64 border-2 border-dashed border-gray-400 rounded-2xl cursor-pointer bg-gray-50 hover:bg-gray-100">
+              <UploadButton onSelect={handleUpload} label="Choose File" />
+              <p className="mt-3 text-sm text-gray-500">
+                Drag & drop an image here, or click to select
+              </p>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleUpload(e.target.files[0])}
+                className="hidden"
+              />
+            </label>
+            <button
+              onClick={refreshHistory}
+              className="mt-6 text-sm text-gray-600 underline hover:no-underline"
+            >
+              Refresh history
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
+              <ImageCard title="Original Image" src={uploadedImage} />
+              <ImageCard
+                title={
+                  mode === "slow"
+                    ? `Diffused Image ${isStreaming ? "(streaming…)" : ""}`
+                    : "Diffused Image"
+                }
+                src={diffusedImage}
+                placeholder="Click Diffuse to generate image"
+              />
             </div>
-          ) : (
-            <>
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
-                <ImageCard title="Original Image" src={uploadedImage} />
-                <ImageCard
-                  title={
-                    mode === "slow"
-                      ? `Diffused Image ${isStreaming ? "(streaming…)" : ""}`
-                      : "Diffused Image"
-                  }
-                  src={diffusedImage}
-                  placeholder="Click Diffuse to generate image"
-                />
-              </div>
 
-              <div className="bg-white border-t p-6">
-                <div className="w-full flex flex-wrap items-center justify-center gap-6">
-                  <UploadButton onSelect={handleUpload} label="Upload Another Image" compact />
-                  <ModeSelector value={mode} onChange={setMode} />
-                  <Controls
-                    diffusion={diffusion}
-                    setDiffusion={setDiffusion}
-                    onDiffuse={diffuse}
-                  />
-                  {mode === "slow" && isStreaming && (
-                    <button
-                      onClick={cancelStream}
-                      className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-                {(isStreaming || progress > 0) && (
-                  <ProgressBar
-                    isStreaming={isStreaming}
-                    progress={progress}
-                    currentStep={currentStep}
-                    totalSteps={totalSteps}
-                    streamError={streamError}
-                  />
+            <div className="bg-white border-t p-6">
+              <div className="w-full flex flex-wrap items-center justify-center gap-6">
+                <UploadButton onSelect={handleUpload} label="Upload Another Image" compact />
+                <ModeSelector value={mode} onChange={setMode} />
+                <Controls diffusion={diffusion} setDiffusion={setDiffusion} onDiffuse={diffuse} />
+                {mode === "slow" && isStreaming && (
+                  <button
+                    onClick={cancelStream}
+                    className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700"
+                  >
+                    Cancel
+                  </button>
                 )}
               </div>
-
-              {mode === "slow" && (isStreaming || frames.length > 0) && (
-                <section className="bg-gray-50 border-t p-6 space-y-4">
-                  <h2 className="text-lg font-semibold">Interactive Timeline</h2>
-                  <TimelineStrip
-                    frames={frames}
-                    scrubT={scrubT}
-                    setScrubT={setScrubT}
-                    timelineRef={timelineRef}
-                    rememberScroll={rememberScroll}
-                    restoreScroll={restoreScroll}
-                    onCenterClick={onCenterThumb}
-                    onAfterSelect={() => {
-                      // Bring chart into view (vertical only)
-                      document
-                        .getElementById("noise-chart-anchor")
-                        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                    }}
-                  />
-                  <div id="noise-chart-anchor">
-                    <NoiseChart
-                      chartPoints={chartPoints}
-                      scrubT={scrubT}
-                      setScrubT={setScrubT}
-                    />
-                  </div>
-                </section>
+              {(isStreaming || progress > 0) && (
+                <ProgressBar
+                  isStreaming={isStreaming}
+                  progress={progress}
+                  currentStep={currentStep}
+                  totalSteps={totalSteps}
+                  streamError={streamError}
+                />
               )}
-            </>
-          )}
-        </main>
-      </div>
+            </div>
 
-      {showDeleteModal && (
-        <DeleteModal
-          file={selectedForDelete}
-          onCancel={() => {
-            setSelectedForDelete(null);
-            setShowDeleteModal(false);
-          }}
-          onConfirm={confirmDelete}
-        />
-      )}
-      {viewerImage && (
-        <ImageViewerModal
-          image={viewerImage}
-          onClose={() => setViewerImage(null)}
-        />
-      )}
-      <NoticeModal
-        open={invalidFileOpen}
-        title="Invalid file type"
-        message={invalidFileMsg}
-        onClose={() => setInvalidFileOpen(false)}
-      />
-
+            {mode === "slow" && (isStreaming || frames.length > 0) && (
+              <section className="bg-gray-50 border-t p-6 space-y-4">
+                <h2 className="text-lg font-semibold">Interactive Timeline</h2>
+                <TimelineStrip
+                  frames={frames}
+                  scrubT={scrubT}
+                  setScrubT={setScrubT}
+                  timelineRef={timelineRef}
+                  rememberScroll={rememberScroll}
+                  restoreScroll={restoreScroll}
+                  onCenterClick={onCenterThumb}
+                  onAfterSelect={() => {
+                    document
+                      .getElementById("noise-chart-anchor")
+                      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                  }}
+                />
+                <div id="noise-chart-anchor">
+                  <NoiseChart chartPoints={chartPoints} scrubT={scrubT} setScrubT={setScrubT} />
+                </div>
+              </section>
+            )}
+          </>
+        )}
+      </main>
     </div>
-  );
+
+    {/* Modals */}
+    {showDeleteModal && (
+      <DeleteModal
+        file={selectedForDelete}
+        onCancel={() => {
+          setSelectedForDelete(null);
+          setShowDeleteModal(false);
+        }}
+        onConfirm={confirmDelete}
+      />
+    )}
+    {viewerImage && <ImageViewerModal image={viewerImage} onClose={() => setViewerImage(null)} />}
+    <NoticeModal
+      open={invalidFileOpen}
+      title="Invalid file type"
+      message={invalidFileMsg}
+      onClose={() => setInvalidFileOpen(false)}
+    />
+  </div>
+);
+
 }
