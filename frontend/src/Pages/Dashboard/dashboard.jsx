@@ -215,6 +215,39 @@ const handleUpload = useCallback(
     [switchToImage]
   );
 
+  const resetTimelineForActiveImage = useCallback(async () => {
+  // stop any previous stream just in case
+  try {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ action: "cancel" }));
+      wsRef.current.close();
+    }
+  } catch {}
+
+  // clear persisted + in-memory timeline for the active image
+  if (currentImageKey) {
+    await deleteFramesForImage(currentImageKey);
+  }
+
+  // clear UI state for the timeline
+  setFrames([]);
+  setScrubT(null);
+  setProgress(0);
+  setCurrentStep(0);
+  setDiffusedImage(null);
+  tOffsetRef.current = 0; // start from 0 next run
+}, [
+  currentImageKey,
+  deleteFramesForImage,
+  setFrames,
+  setScrubT,
+  setProgress,
+  setCurrentStep,
+  setDiffusedImage,
+  tOffsetRef,
+  wsRef,
+]);
+
   const confirmDelete = useCallback(async () => {
   if (!selectedForDelete) return;
   const id = selectedForDelete.id;
@@ -241,16 +274,18 @@ if (currentImageKey === id) {
   }
 }, [selectedForDelete, currentImageKey, removeById, refreshHistory, switchToImage]);
 
-  const diffuse = useCallback(async () => {
+const diffuse = useCallback(async () => {
   if (!canDiffuse) {
-    alert("Please upload an image first.");
+    setInvalidFileMsg("Please upload an image first.");
+    setInvalidFileOpen(true);
     return;
   }
 
   if (mode === "fast") {
-    setProgress(0);
+    // fast mode doesn’t use timeline, but we can still reset preview state if you want
     setStreamError("");
     setIsStreaming(false);
+    setProgress(0);
     await fastDiffuse({
       uploadedImageDataUrl,
       diffusion,
@@ -258,77 +293,77 @@ if (currentImageKey === id) {
       setProgress,
       setCurrentStep,
     });
-  } else {
-    // SLOW (WS)
-    setStreamError("");
-    setIsStreaming(true);
-    setProgress(0);
-
-    // append new run after last globalT for THIS IMAGE
-    const nextOffset = computeNextOffsetFrom(frames);
-    tOffsetRef.current = nextOffset; // ✅ do NOT reset to 0
-
-    slowDiffuse({
-      uploadedImageDataUrl,
-      diffusion,
-      tOffset: nextOffset,
-      onStart: () => {},
-      onFrame: async (frame) => {
-        if (!frame.image) return;
-
-        setFrames((prev) => {
-          const idx = prev.findIndex((f) => f.globalT === frame.globalT);
-          let next;
-          if (idx >= 0) {
-            next = [...prev];
-            next[idx] = frame;
-          } else {
-            next = [...prev, frame].sort((a, b) => a.globalT - b.globalT);
-          }
-
-          // ✅ persist to IndexedDB instead of sessionStorage
-          if (currentImageKey) {
-            saveFramesForImage(currentImageKey, next);
-          }
-          return next;
-        });
-
-        // live preview when not scrubbing
-        if (scrubT == null && frame.image) {
-          setDiffusedImage(frame.image);
-        }
-      },
-      onProgress: (p, t) => {
-        setProgress(p);
-        setCurrentStep(t);
-      },
-      onDone: () => {
-        setIsStreaming(false);
-        setProgress(1);
-      },
-      onError: (err) => {
-        setIsStreaming(false);
-        setStreamError(err?.message || "WebSocket error");
-      },
-    });
+    return;
   }
+
+  // --- SLOW (WebSocket) ---
+  // ✅ clear the current image’s timeline so the new run starts fresh
+  await resetTimelineForActiveImage();
+
+  setStreamError("");
+  setIsStreaming(true);
+  setProgress(0);
+
+  const nextOffset = 0;            // ✅ always start from 0 now
+  tOffsetRef.current = nextOffset; // keep ref in sync
+
+  slowDiffuse({
+    uploadedImageDataUrl,
+    diffusion,
+    tOffset: nextOffset,
+    onStart: () => {},
+    onFrame: async (frame) => {
+      if (!frame.image) return;
+
+      setFrames((prev) => {
+        const idx = prev.findIndex((f) => f.globalT === frame.globalT);
+        const next =
+          idx >= 0
+            ? prev.map((p, i) => (i === idx ? frame : p))
+            : [...prev, frame].sort((a, b) => a.globalT - b.globalT);
+
+        // persist to IndexedDB each step
+        if (currentImageKey) {
+          saveFramesForImage(currentImageKey, next);
+        }
+        return next;
+      });
+
+      if (scrubT == null && frame.image) setDiffusedImage(frame.image);
+    },
+    onProgress: (p, t) => {
+      setProgress(p);
+      setCurrentStep(t);
+    },
+    onDone: () => {
+      setIsStreaming(false);
+      setProgress(1);
+    },
+    onError: (err) => {
+      setIsStreaming(false);
+      setStreamError(err?.message || "WebSocket error");
+    },
+  });
 }, [
   mode,
   canDiffuse,
-  fastDiffuse,
-  slowDiffuse,
   uploadedImageDataUrl,
   diffusion,
+  fastDiffuse,
+  slowDiffuse,
+  resetTimelineForActiveImage, // ✅ new dep
   setDiffusedImage,
   setProgress,
   setCurrentStep,
-  computeNextOffsetFrom,
-  frames,
   tOffsetRef,
   currentImageKey,
   scrubT,
-  saveFramesForImage, // ✅ added to deps
+  saveFramesForImage,
+  setFrames,
+  setStreamError,
+  setIsStreaming,
 ]);
+
 
   const onCenterThumb = useCallback(
     (e) => {
