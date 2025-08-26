@@ -59,11 +59,13 @@ export default function Dashboard() {
   const [streamError, setStreamError] = useState("");
 
   // timeline & chart (custom hook)
-  const {
-    frames, setFrames, scrubT, setScrubT,
-    tOffsetRef, timelineRef, timelineScrollRef,
-    saveFramesForImage, loadFramesForImage, rememberScroll, restoreScroll, computeNextOffsetFrom,
-  } = usePerImageTimeline();
+const {
+  frames, setFrames, scrubT, setScrubT,
+  tOffsetRef, timelineRef, timelineScrollRef,
+  saveFramesForImage, loadFramesForImage, deleteFramesForImage, 
+  rememberScroll, restoreScroll, computeNextOffsetFrom,
+} = usePerImageTimeline();
+
 
   // websocket + rest (custom hook)
   const { fastDiffuse, slowDiffuse, cancel: cancelStream, wsRef } = useDiffusionStream({ api });
@@ -124,54 +126,32 @@ const { history, refreshHistory, removeById, addOrUpdate } = useImageHistory();
     setDiffusedImage(null);
   }, [setFrames, setScrubT, tOffsetRef]);
 
-  const switchToImage = useCallback(
-    (key, imageUrl, dataUrl) => {
-      // 1) stop any existing stream
-      try {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ action: "cancel" }));
-          wsRef.current.close();
-        }
-      } catch {}
-      setIsStreaming(false);
-      setStreamError("");
+const switchToImage = useCallback(
+  async (key, imageUrl, dataUrl) => {
+    // stop existing stream...
+    if (currentImageKey) await saveFramesForImage(currentImageKey, frames);
 
-      // 2) persist old frames
-      if (currentImageKey) saveFramesForImage(currentImageKey, frames);
+    setCurrentImageKey(key || null);
+    setUploadedImage(imageUrl || null);
+    setUploadedImageDataUrl(dataUrl || null);
 
-      // 3) update active image
-      setCurrentImageKey(key || null);
-      setUploadedImage(imageUrl || null);
-      setUploadedImageDataUrl(dataUrl || null);
+    const restored = key ? await loadFramesForImage(key) : [];
+    setFrames(restored);
+    setScrubT(null);
+    setProgress(0);
+    setCurrentStep(0);
+    tOffsetRef.current = computeNextOffsetFrom(restored);
 
-      // 4) restore frames
-      const restored = key ? loadFramesForImage(key) : [];
-      setFrames(restored);
-      setScrubT(null);
-      setProgress(0);
-      setCurrentStep(0);
-      tOffsetRef.current = computeNextOffsetFrom(restored);
+    if (restored.length) {
+      const last = restored[restored.length - 1];
+      if (last?.image) setDiffusedImage(last.image);
+    } else {
+      setDiffusedImage(null);
+    }
+  },
+  [currentImageKey, frames, saveFramesForImage, loadFramesForImage, computeNextOffsetFrom]
+);
 
-      // 5) restore preview
-      if (restored.length) {
-        const last = restored[restored.length - 1];
-        if (last?.image) setDiffusedImage(last.image);
-      } else {
-        setDiffusedImage(null);
-      }
-    },
-    [
-      wsRef,
-      currentImageKey,
-      frames,
-      saveFramesForImage,
-      loadFramesForImage,
-      setFrames,
-      setScrubT,
-      computeNextOffsetFrom,
-      tOffsetRef,
-    ]
-  );
 
 
 const handleUpload = useCallback(
@@ -239,10 +219,10 @@ const handleUpload = useCallback(
   if (!selectedForDelete) return;
   const id = selectedForDelete.id;
 
-  if (currentImageKey === id) {
-    try { sessionStorage.removeItem(`frames:${currentImageKey}`); } catch {}
-    switchToImage(null, null, null);
-  }
+if (currentImageKey === id) {
+  await deleteFramesForImage(id);
+  switchToImage(null, null, null);
+}
 
   // ✅ optimistic removal
   removeById(id);
@@ -262,90 +242,93 @@ const handleUpload = useCallback(
 }, [selectedForDelete, currentImageKey, removeById, refreshHistory, switchToImage]);
 
   const diffuse = useCallback(async () => {
-    if (!canDiffuse) {
-      alert("Please upload an image first.");
-      return;
-    }
-    if (mode === "fast") {
-      setProgress(0);
-      setStreamError("");
-      setIsStreaming(false);
-      await fastDiffuse({
-        uploadedImageDataUrl,
-        diffusion,
-        setDiffusedImage,
-        setProgress,
-        setCurrentStep,
-      });
-    } else {
-      // SLOW (WS)
-      setStreamError("");
-      setIsStreaming(true);
-      setProgress(0);
+  if (!canDiffuse) {
+    alert("Please upload an image first.");
+    return;
+  }
 
-      // append new run after last globalT for THIS IMAGE
-      const nextOffset = computeNextOffsetFrom(frames);
-      tOffsetRef.current = nextOffset; // ✅ do NOT reset to 0
+  if (mode === "fast") {
+    setProgress(0);
+    setStreamError("");
+    setIsStreaming(false);
+    await fastDiffuse({
+      uploadedImageDataUrl,
+      diffusion,
+      setDiffusedImage,
+      setProgress,
+      setCurrentStep,
+    });
+  } else {
+    // SLOW (WS)
+    setStreamError("");
+    setIsStreaming(true);
+    setProgress(0);
 
-      slowDiffuse({
-        uploadedImageDataUrl,
-        diffusion,
-        tOffset: nextOffset,
-        onStart: () => {},
-        onFrame: (frame) => {
-          if (!frame.image) return;
-          setFrames((prev) => {
-            const idx = prev.findIndex((f) => f.globalT === frame.globalT);
-            let next;
-            if (idx >= 0) {
-              next = [...prev];
-              next[idx] = frame;
-            } else {
-              next = [...prev, frame].sort((a, b) => a.globalT - b.globalT);
-            }
-            if (currentImageKey) {
-              try {
-                sessionStorage.setItem(
-                  `frames:${currentImageKey}`,
-                  JSON.stringify(next)
-                );
-              } catch {}
-            }
-            return next;
-          });
-          // live preview when not scrubbing
-          if (scrubT == null && frame.image) setDiffusedImage(frame.image);
-        },
-        onProgress: (p, t) => {
-          setProgress(p);
-          setCurrentStep(t);
-        },
-        onDone: () => {
-          setIsStreaming(false);
-          setProgress(1);
-        },
-        onError: (err) => {
-          setIsStreaming(false);
-          setStreamError(err?.message || "WebSocket error");
-        },
-      });
-    }
-  }, [
-    mode,
-    canDiffuse,
-    fastDiffuse,
-    slowDiffuse,
-    uploadedImageDataUrl,
-    diffusion,
-    setDiffusedImage,
-    setProgress,
-    setCurrentStep,
-    computeNextOffsetFrom,
-    frames,
-    tOffsetRef,
-    currentImageKey,
-    scrubT,
-  ]);
+    // append new run after last globalT for THIS IMAGE
+    const nextOffset = computeNextOffsetFrom(frames);
+    tOffsetRef.current = nextOffset; // ✅ do NOT reset to 0
+
+    slowDiffuse({
+      uploadedImageDataUrl,
+      diffusion,
+      tOffset: nextOffset,
+      onStart: () => {},
+      onFrame: async (frame) => {
+        if (!frame.image) return;
+
+        setFrames((prev) => {
+          const idx = prev.findIndex((f) => f.globalT === frame.globalT);
+          let next;
+          if (idx >= 0) {
+            next = [...prev];
+            next[idx] = frame;
+          } else {
+            next = [...prev, frame].sort((a, b) => a.globalT - b.globalT);
+          }
+
+          // ✅ persist to IndexedDB instead of sessionStorage
+          if (currentImageKey) {
+            saveFramesForImage(currentImageKey, next);
+          }
+          return next;
+        });
+
+        // live preview when not scrubbing
+        if (scrubT == null && frame.image) {
+          setDiffusedImage(frame.image);
+        }
+      },
+      onProgress: (p, t) => {
+        setProgress(p);
+        setCurrentStep(t);
+      },
+      onDone: () => {
+        setIsStreaming(false);
+        setProgress(1);
+      },
+      onError: (err) => {
+        setIsStreaming(false);
+        setStreamError(err?.message || "WebSocket error");
+      },
+    });
+  }
+}, [
+  mode,
+  canDiffuse,
+  fastDiffuse,
+  slowDiffuse,
+  uploadedImageDataUrl,
+  diffusion,
+  setDiffusedImage,
+  setProgress,
+  setCurrentStep,
+  computeNextOffsetFrom,
+  frames,
+  tOffsetRef,
+  currentImageKey,
+  scrubT,
+  saveFramesForImage, // ✅ added to deps
+]);
 
   const onCenterThumb = useCallback(
     (e) => {

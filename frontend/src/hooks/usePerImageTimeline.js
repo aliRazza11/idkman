@@ -1,4 +1,6 @@
+// src/hooks/usePerImageTimeline.js
 import { useRef, useState, useLayoutEffect, useCallback } from "react";
+import { set, get, del } from "idb-keyval";
 
 export default function usePerImageTimeline() {
   const [frames, setFrames] = useState([]);
@@ -9,27 +11,49 @@ export default function usePerImageTimeline() {
   const timelineRef = useRef(null);
   const timelineScrollRef = useRef(0);
 
-  const ssKey = useCallback((k) => `frames:${k}`, []);
+  // Use a cleaner naming scheme: "timeline:<imageId>"
+  const dbKey = useCallback((imageId) => `timeline:${imageId}`, []);
 
-  const saveFramesForImage = useCallback((key, framesArr) => {
-    if (!key) return;
-    framesByImageRef.current.set(key, framesArr);
-    try {
-      sessionStorage.setItem(ssKey(key), JSON.stringify(framesArr));
-    } catch {}
-  }, [ssKey]);
+  const saveFramesForImage = useCallback(
+    async (imageId, framesArr) => {
+      if (!imageId) return;
+      framesByImageRef.current.set(imageId, framesArr);
+      try {
+        await set(dbKey(imageId), framesArr);
+      } catch (err) {
+        console.error("Failed to save frames in IndexedDB:", err);
+      }
+    },
+    [dbKey]
+  );
 
-  const loadFramesForImage = useCallback((key) => {
-    if (!key) return [];
-    const mem = framesByImageRef.current.get(key);
-    if (mem) return mem;
-    try {
-      const raw = sessionStorage.getItem(ssKey(key));
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  }, [ssKey]);
+  const loadFramesForImage = useCallback(
+    async (imageId) => {
+      if (!imageId) return [];
+      const mem = framesByImageRef.current.get(imageId);
+      if (mem) return mem;
+      try {
+        const fromDb = await get(dbKey(imageId));
+        return fromDb || [];
+      } catch (err) {
+        console.error("Failed to load frames from IndexedDB:", err);
+        return [];
+      }
+    },
+    [dbKey]
+  );
+
+  const deleteFramesForImage = useCallback(
+    async (imageId) => {
+      framesByImageRef.current.delete(imageId);
+      try {
+        await del(dbKey(imageId));
+      } catch (err) {
+        console.error("Failed to delete frames from IndexedDB:", err);
+      }
+    },
+    [dbKey]
+  );
 
   useLayoutEffect(() => {
     const el = timelineRef.current;
@@ -52,9 +76,18 @@ export default function usePerImageTimeline() {
   );
 
   return {
-    frames, setFrames, scrubT, setScrubT,
-    tOffsetRef, timelineRef, timelineScrollRef,
-    saveFramesForImage, loadFramesForImage, rememberScroll, restoreScroll,
+    frames,
+    setFrames,
+    scrubT,
+    setScrubT,
+    tOffsetRef,
+    timelineRef,
+    timelineScrollRef,
+    saveFramesForImage,
+    loadFramesForImage,
+    deleteFramesForImage,
+    rememberScroll,
+    restoreScroll,
     computeNextOffsetFrom,
   };
 }
